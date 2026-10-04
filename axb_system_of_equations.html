@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ax = b ↔ System of Equations</title>
+<style>
+  :root{
+    --bg:#f5f7fb; --card:#ffffff; --text:#172033; --muted:#64748b;
+    --border:#cbd5e1; --accent:#2563eb; --accent2:#dbeafe;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--text)}
+  .wrap{max-width:1100px;margin:30px auto;padding:0 18px 40px}
+  h1{margin:0 0 8px;font-size:clamp(1.7rem,4vw,2.5rem)}
+  .intro{color:var(--muted);margin:0 0 22px;line-height:1.5}
+  .toolbar{display:flex;gap:12px;align-items:end;flex-wrap:wrap;margin-bottom:18px}
+  label{font-weight:700;font-size:.92rem}
+  select,button,input{font:inherit}
+  select,button{min-height:42px;border-radius:8px;border:1px solid var(--border);padding:8px 12px;background:white}
+  button{cursor:pointer;font-weight:700}
+  button.primary{background:var(--accent);color:white;border-color:var(--accent)}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;min-width:0}
+  .card h2{font-size:1.1rem;margin:0 0 15px}
+  .matrix-scroll{overflow-x:auto;padding-bottom:4px}
+  .matrix-row{display:flex;align-items:center;gap:10px;min-width:max-content}
+  .matrix-block{text-align:center}
+  .matrix-title{font-weight:700;margin-bottom:6px}
+  .bracket{display:grid;gap:5px;padding:8px;border-left:3px solid var(--text);border-right:3px solid var(--text)}
+  .a-grid{grid-template-columns:repeat(var(--n),64px)}
+  .vector{grid-template-columns:64px}
+  input.coeff{width:64px;height:42px;text-align:center;border:1px solid var(--border);border-radius:7px;background:#fff}
+  .var{height:42px;display:flex;align-items:center;justify-content:center;font-style:italic;font-size:1.1rem}
+  .symbol{font-size:1.7rem}
+  .equations{font-family:"Courier New",monospace;font-size:1.15rem;line-height:2}
+  .hint{font-size:.9rem;color:var(--muted);line-height:1.45;margin-top:14px}
+  .solution{margin-top:18px}
+  .solution-line{font-family:"Courier New",monospace;font-size:1.1rem;line-height:1.7}
+  .status{color:var(--muted);font-size:.9rem}
+  .idea{margin-top:18px;background:var(--accent2);border-left:5px solid var(--accent);padding:14px 16px;border-radius:8px;line-height:1.5}
+  @media(max-width:760px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <h1>Ax = b ↔ System of Equations</h1>
+  <p class="intro">Change the matrix size or edit any coefficient. The equations and solution update automatically.</p>
+
+  <div class="toolbar">
+    <label>Matrix size<br>
+      <select id="sizeSel">
+        <option value="2">2 × 2</option>
+        <option value="3" selected>3 × 3</option>
+        <option value="4">4 × 4</option>
+      </select>
+    </label>
+    <button class="primary" id="exampleBtn" type="button">New example</button>
+    <button id="resetBtn" type="button">Simple example</button>
+  </div>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Matrix form</h2>
+      <div id="matrixArea" class="matrix-scroll"></div>
+      <p class="hint">Each row of <b>A</b> becomes one equation. The corresponding entry in <b>b</b> becomes the right-hand side of that equation.</p>
+    </section>
+
+    <section class="card">
+      <h2>Equivalent system of equations</h2>
+      <div id="equations" class="equations"></div>
+    </section>
+  </div>
+
+  <section class="card solution">
+    <h2>Solution</h2>
+    <div id="status" class="status" aria-live="polite"></div>
+    <div id="solution" class="solution-line"></div>
+    <div id="check" class="hint"></div>
+  </section>
+
+  <div class="idea"><b>Key idea:</b> Writing <b>Ax = b</b> does not create a new problem. We simply collect the coefficients into matrix <b>A</b>, the unknowns into vector <b>x</b>, and the right-hand-side values into vector <b>b</b>.</div>
+</main>
+
+<script>
+(() => {
+  const sel=document.getElementById('sizeSel');
+  const area=document.getElementById('matrixArea');
+  const eq=document.getElementById('equations');
+  const sol=document.getElementById('solution');
+  const status=document.getElementById('status');
+  const check=document.getElementById('check');
+
+  let n=3, A=[], b=[];
+  const names=['x','y','z','w'];
+
+  const simple={
+    2:{A:[[2,1],[1,-1]], b:[5,1]},
+    3:{A:[[1,1,1],[2,-1,1],[1,2,-1]], b:[6,3,2]},
+    4:{A:[[1,1,1,1],[2,-1,1,0],[1,2,-1,1],[0,1,2,-1]], b:[10,3,5,1]}
+  };
+
+  const clone=o=>JSON.parse(JSON.stringify(o));
+  function fmt(v){
+    if(Math.abs(v)<1e-10) v=0;
+    return Number(v.toFixed(4)).toString();
+  }
+
+  function render(){
+    let h='<div class="matrix-row">';
+    h+='<div class="matrix-block"><div class="matrix-title">A</div><div class="bracket a-grid" style="--n:'+n+'">';
+    for(let i=0;i<n;i++) for(let j=0;j<n;j++)
+      h+='<input class="coeff" type="number" step="any" data-a="'+i+','+j+'" value="'+A[i][j]+'" aria-label="A row '+(i+1)+' column '+(j+1)+'">';
+    h+='</div></div><div class="symbol">·</div>';
+
+    h+='<div class="matrix-block"><div class="matrix-title">x</div><div class="bracket vector">';
+    for(let i=0;i<n;i++) h+='<div class="var">'+names[i]+'</div>';
+    h+='</div></div><div class="symbol">=</div>';
+
+    h+='<div class="matrix-block"><div class="matrix-title">b</div><div class="bracket vector">';
+    for(let i=0;i<n;i++)
+      h+='<input class="coeff" type="number" step="any" data-b="'+i+'" value="'+b[i]+'" aria-label="b row '+(i+1)+'">';
+    h+='</div></div></div>';
+    area.innerHTML=h;
+
+    area.querySelectorAll('input').forEach(inp=>{
+      inp.addEventListener('input',()=>{
+        let v=parseFloat(inp.value);
+        if(!Number.isFinite(v)) v=0;
+        if(inp.dataset.a){
+          const [i,j]=inp.dataset.a.split(',').map(Number);
+          A[i][j]=v;
+        } else {
+          b[Number(inp.dataset.b)]=v;
+        }
+        update();
+      });
+    });
+    update();
+  }
+
+  function equationText(i){
+    let s='';
+    for(let j=0;j<n;j++){
+      const c=A[i][j];
+      if(c===0) continue;
+      const mag=Math.abs(c);
+      const coef=mag===1 ? '' : fmt(mag);
+      if(!s) s+=(c<0?'−':'')+coef+names[j];
+      else s+=(c<0?' − ':' + ')+coef+names[j];
+    }
+    return (s||'0')+' = '+fmt(b[i]);
+  }
+
+  function update(){
+    eq.innerHTML='';
+    for(let i=0;i<n;i++){
+      const d=document.createElement('div');
+      d.textContent=equationText(i);
+      eq.appendChild(d);
+    }
+    solve();
+  }
+
+  function solve(){
+    const M=A.map((r,i)=>r.slice().concat([b[i]]));
+
+    for(let k=0;k<n;k++){
+      let p=k;
+      for(let i=k+1;i<n;i++)
+        if(Math.abs(M[i][k])>Math.abs(M[p][k])) p=i;
+
+      if(Math.abs(M[p][k])<1e-10){
+        sol.textContent='No unique solution';
+        status.textContent='Matrix A is singular.';
+        check.textContent='Try changing one or more coefficients.';
+        return;
+      }
+
+      [M[k],M[p]]=[M[p],M[k]];
+      const pivot=M[k][k];
+      for(let j=k;j<=n;j++) M[k][j]/=pivot;
+
+      for(let i=0;i<n;i++){
+        if(i===k) continue;
+        const f=M[i][k];
+        for(let j=k;j<=n;j++) M[i][j]-=f*M[k][j];
+      }
+    }
+
+    const x=M.map(r=>r[n]);
+    sol.textContent=x.map((v,i)=>names[i]+' = '+fmt(v)).join('     ');
+    status.textContent='Unique solution';
+    const calc=A.map(r=>r.reduce((sum,c,j)=>sum+c*x[j],0));
+    check.textContent='Check: Ax = ['+calc.map(fmt).join(', ')+']ᵀ = b';
+  }
+
+  function setSimple(){
+    const o=clone(simple[n]);
+    A=o.A; b=o.b; render();
+  }
+
+  function determinant(M){
+    const m=M.map(r=>r.slice());
+    let det=1;
+    for(let k=0;k<m.length;k++){
+      let p=k;
+      for(let i=k+1;i<m.length;i++)
+        if(Math.abs(m[i][k])>Math.abs(m[p][k])) p=i;
+      if(Math.abs(m[p][k])<1e-10) return 0;
+      if(p!==k){[m[k],m[p]]=[m[p],m[k]];det*=-1;}
+      det*=m[k][k];
+      const pivot=m[k][k];
+      for(let i=k+1;i<m.length;i++){
+        const f=m[i][k]/pivot;
+        for(let j=k;j<m.length;j++) m[i][j]-=f*m[k][j];
+      }
+    }
+    return det;
+  }
+
+  function randomExample(){
+    do{
+      A=Array.from({length:n},()=>Array.from({length:n},()=>Math.floor(Math.random()*7)-3));
+    }while(Math.abs(determinant(A))<1e-10);
+    b=Array.from({length:n},()=>Math.floor(Math.random()*13)-6);
+    render();
+  }
+
+  sel.addEventListener('change',()=>{n=Number(sel.value);setSimple();});
+  document.getElementById('exampleBtn').addEventListener('click',randomExample);
+  document.getElementById('resetBtn').addEventListener('click',setSimple);
+
+  setSimple();
+})();
+</script>
+</body>
+</html>
